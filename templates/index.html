@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gender Prediction</title>
+    <style>
+        #uploaded-image-container {
+            width: 20rem;
+            height: 20rem;
+            overflow: hidden; /* Ensure image does not overflow */
+            float: left; /* Float the image container to the left */
+            margin-right: 1rem; /* Add margin to separate image and video */
+        }
+        
+        #uploaded-image {
+            max-width: 100%;
+            max-height: 100%;
+        }
+
+        #webcam-container {
+            float: left; /* Float the video container to the left */
+            width: 20rem;
+            height: 20rem;
+            overflow: hidden; /* Ensure video does not overflow */
+        }
+
+        #webcam-video {
+            width: 100%;
+            height: 100%;
+        }
+    </style>
+</head>
+<body>
+    <h1>Gender Prediction</h1>
+    <form id="upload-form" enctype="multipart/form-data">
+        <input type="file" id="file-input" name="file" accept="image/*">
+        <input type="button" id="capture-btn" value="Capture from Webcam">
+        <input type="button" id="predict-btn" value="Predict">
+    </form>
+    <div id="result"></div>
+    <div id="uploaded-image-container"></div>
+    <div id="webcam-container">
+        <video id="webcam-video"></video>
+    </div>
+
+    <script>
+        var videoStream;
+        var videoElement = document.getElementById('webcam-video');
+        var videoCanvas = document.createElement('canvas');
+        var videoContext = videoCanvas.getContext('2d');
+
+        function startVideoStream() {
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                console.error('getUserMedia is not supported');
+                return;
+            }
+
+            navigator.mediaDevices.getUserMedia({ video: true })
+                .then(function(stream) {
+                    videoStream = stream;
+                    videoElement.srcObject = stream;
+                    videoElement.play();
+                })
+                .catch(function(error) {
+                    console.error('Error accessing webcam:', error);
+                });
+        }
+
+        function stopVideoStream() {
+            if (videoStream) {
+                videoStream.getTracks().forEach(function(track) {
+                    track.stop();
+                });
+            }
+        }
+
+        document.getElementById('capture-btn').addEventListener('click', function() {
+            startVideoStream();
+        });
+
+        document.getElementById('file-input').addEventListener('change', function(event) {
+            var file = event.target.files[0];
+            if (file) {
+                var reader = new FileReader();
+                reader.onload = function(event) {
+                    displayImage(event.target.result);
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        function displayImage(dataUrl) {
+            var img = new Image();
+            img.id = 'uploaded-image';
+            img.onload = function() {
+                var uploadedImageContainer = document.getElementById('uploaded-image-container');
+                uploadedImageContainer.innerHTML = '';
+                uploadedImageContainer.appendChild(img);
+            };
+            img.src = dataUrl;
+        }
+
+        document.getElementById('predict-btn').addEventListener('click', function() {
+            var form_data = new FormData();
+            var file_input = document.getElementById('file-input');
+            var file = file_input.files[0];
+            if (file) {
+                form_data.append('file', file);
+            } else {
+                if (videoStream && videoElement.videoWidth > 0 && videoElement.videoHeight > 0) {
+                    videoCanvas.width = videoElement.videoWidth;
+                    videoCanvas.height = videoElement.videoHeight;
+                    videoContext.drawImage(videoElement, 0, 0, videoCanvas.width, videoCanvas.height);
+                    var imgData = videoCanvas.toDataURL('image/jpeg');
+                    var blob = dataURItoBlob(imgData);
+                    form_data.append('file', blob, 'captured_image.jpg');
+                    displayImage(imgData);
+                } else {
+                    console.error('No image captured');
+                    return;
+                }
+            }
+
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', '/predict', true);
+            xhr.onload = function () {
+                if (xhr.status === 200) {
+                    var response = JSON.parse(xhr.responseText);
+                    var result_div = document.getElementById('result');
+                    result_div.innerHTML = "<h2>Gender Predictions by Individual Models:</h2>" +
+                        "<p>ResNet50 Model Prediction: " + response.gender_resnet50 + "</p>" +
+                        "<p>InceptionV3 Model Prediction: " + response.gender_inceptionv3 + "</p>" +
+                        "<p>CNN Model Prediction: " + response.gender_cnn + "</p>" +
+                        "<h2>Gender Prediction by Ensemble Model:</h2>" +
+                        "<p>Ensemble Model Prediction: " + response.gender_ensemble + "</p>";
+                } else {
+                    console.error('Error:', xhr.statusText);
+                }
+            };
+            xhr.onerror = function () {
+                console.error('Request failed');
+            };
+            xhr.send(form_data);
+        });
+
+        // Function to convert data URI to Blob
+        function dataURItoBlob(dataURI) {
+            var byteString = atob(dataURI.split(',')[1]);
+            var mimeString = dataURI.split(',')[0].split(':')[1].split(';')[0];
+            var ab = new ArrayBuffer(byteString.length);
+            var ia = new Uint8Array(ab);
+            for (var i = 0; i < byteString.length; i++) {
+                ia[i] = byteString.charCodeAt(i);
+            }
+            var blob = new Blob([ab], { type: mimeString });
+            return blob;
+        }
+
+        window.addEventListener('beforeunload', function() {
+            stopVideoStream();
+        });
+    </script>
+</body>
+</html>
